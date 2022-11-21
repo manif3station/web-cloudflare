@@ -6,6 +6,6 @@ services:
         restart: always                                                             
         user: root                                                                  
         volumes:                                                                    
-            - ./tunnel:/etc/cloudflared                                         
+            - ../tunnel:/etc/cloudflared                                         
         command: tunnel run Web
 
