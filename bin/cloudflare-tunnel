@@ -1,0 +1,118 @@
+#!/usr/bin/env perl
+
+package CloudFlareTunnel;
+
+use strict;
+use warnings;
+use FindBin '$Bin';
+
+my $working_dir = "$Bin/..";
+my $tunnel_dir  = "$working_dir/tunnel";
+
+my @docker_args = (
+    docker => 'run',
+    -u     => 'root',
+    -it    => '--rm',
+    -v     => "$tunnel_dir:/root/.cloudflared",
+    'cloudflare/cloudflared:latest'
+);
+
+my $config_template = do { local $/; <DATA> };
+
+my $uuid = qr/[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}/;
+
+chdir $working_dir;
+
+mkdir $tunnel_dir if !-d $tunnel_dir;
+
+sub list_tunnels {
+    my $cmd = join ' ', map { quotemeta } @docker_args, 'list';
+    return qx{$cmd};
+}
+
+sub login {
+    system @docker_args, tunnel => 'login';
+}
+
+sub create_web_tunnel {
+    system @docker_args, tunnel => qw(create Web);
+}
+
+sub get_input {
+    my $input = <STDIN>;
+    chomp $input;
+    return $input;
+}
+
+sub create_config {
+    my ($config) = @_;
+    open my $fh, '>', "$working_dir/tunnel/config.yml";
+    print $fh $config;
+}
+
+sub enable_tunnel_feature {
+    system qw(cli dock --enable cloudflare-tunnel);
+}
+
+sub call_tunnel {
+    system @docker_args, tunnel => @_;
+}
+
+sub register {
+    my $list_result = list_tunnels;
+
+    my @list = grep { $_ } map { /($uuid)/; $1 } split /\n/, $list_result;
+
+    my $select;
+
+    if ( !@list ) {
+        login;
+        create_web_tunnel;
+        die "!! Run again to continue.\n";
+    }
+    elsif ( @list == 1 ) {
+        $select = $list[0];
+    }
+    elsif ( @list > 1 ) {
+        print "There is more than one tunnels. Which one?\n";
+        print "$list_result\n\n>> ";
+        $select = get_input;
+        die "Invalid selection.\n"
+          if !$select
+          || $select !~ m/$uuid/
+          || !grep { $select eq $_ } @list;
+    }
+
+    my $config = $config_template;
+
+    $config =~ s/\<UUID\>/$select/;
+
+    create_config $config;
+
+    enable_tunnel_feature;
+}
+
+sub main {
+    my ( $cmd, @args ) = @_;
+
+    if ( $cmd eq 'register' ) {
+        register;
+    }
+    else {
+        call_tunnel $cmd => @args;
+    }
+}
+
+caller or main(@ARGV);
+
+__DATA__
+tunnel: <UUID>
+url: http://web:80
+credentials-file: /etc/cloudflared/<UUID>.json
+protocol: quic
+warp-routing:
+   enabled: true
+logfile: /var/log/cloudflared.log
+loglevel: debug
+transport-loglevel: info
+

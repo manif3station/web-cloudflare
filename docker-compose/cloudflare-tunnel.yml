@@ -1,0 +1,11 @@
+version: "3.7"
+services:
+    tunnel:                                                                         
+        image: cloudflare/cloudflared:latest                                        
+        init: true                                                                  
+        restart: always                                                             
+        user: root                                                                  
+        volumes:                                                                    
+            - ./tunnel:/etc/cloudflared                                         
+        command: tunnel run Web
+
