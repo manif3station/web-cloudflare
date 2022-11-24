@@ -3,7 +3,7 @@ use strict;
 use Test::More;
 use FindBin '$Bin';
 
-require "$Bin/../bin/cloudflare-tunnel";
+require "$Bin/../bin/_cloudflare-tunnel";
 
 my @events;
 my $config;
@@ -27,7 +27,7 @@ subtest 'first time' => sub {
     @events = ();
 
     local *CloudFlareTunnel::list_tunnels =
-      sub { push @events, 'list_tunnel'; return '' };
+      sub { push @events, 'list_tunnel'; return () };
 
     eval { CloudFlareTunnel::main('register') };
 
@@ -47,12 +47,7 @@ subtest 'continue ...' => sub {
 
     local *CloudFlareTunnel::list_tunnels = sub {
         push @events, 'list_tunnel';
-        return q{
-You can obtain more detailed information for each tunnel with `cloudflared tunnel info <name/uuid>`
-ID                                   NAME        CREATED              CONNECTIONS  
-2d56eb8f-bf4f-4f8e-928e-2c127d67c4d4 Web         2022-05-18T04:38:23Z 2xIAD, 2xORD 
-2022-11-21T13:05:22Z WRN Your version 2022.7.0 is outdated. We recommend upgrading it to 2022.11.0
-        };
+        qw(2d56eb8f-bf4f-4f8e-928e-2c127d67c4d4);
     };
 
     CloudFlareTunnel::main('register');
@@ -71,13 +66,10 @@ ID                                   NAME        CREATED              CONNECTION
 subtest 'multiple tunnels ...' => sub {
     local *CloudFlareTunnel::list_tunnels = sub {
         push @events, 'list_tunnel';
-        return q{
-You can obtain more detailed information for each tunnel with `cloudflared tunnel info <name/uuid>`
-ID                                   NAME        CREATED              CONNECTIONS  
-2d56eb8f-bf4f-4f8e-928e-2c127d67c4d4 Web         2022-05-18T04:38:23Z 2xIAD, 2xORD 
-1d56eb8f-bf4f-4f8e-928e-2c127d67c4d3 API         2022-05-18T04:38:23Z 2xIAD, 2xORD 
-2022-11-21T13:05:22Z WRN Your version 2022.7.0 is outdated. We recommend upgrading it to 2022.11.0
-        };
+        qw(
+            2d56eb8f-bf4f-4f8e-928e-2c127d67c4d4
+            1d56eb8f-bf4f-4f8e-928e-2c127d67c4d3
+        );
     };
 
     my $input;
@@ -105,7 +97,11 @@ ID                                   NAME        CREATED              CONNECTION
 
         CloudFlareTunnel::main('register');
 
-        like $config, qr/$input/;
+        like $config, qr/($input)/;
+
+        my @found = ($config =~ m/($input)/g);
+
+        is scalar(@found), 2;
 
         is_deeply \@events, [
             qw(

@@ -6,6 +6,8 @@ use strict;
 use warnings;
 use FindBin '$Bin';
 
+$| = 1;
+
 my $working_dir = "$Bin/..";
 my $tunnel_dir  = "$working_dir/tunnel";
 
@@ -26,8 +28,18 @@ chdir $working_dir;
 mkdir $tunnel_dir if !-d $tunnel_dir;
 
 sub list_tunnels {
-    my $cmd = join ' ', map { quotemeta } @docker_args, 'list';
-    return qx{$cmd};
+    my @files = split /\n/, qx{find $tunnel_dir -type f -name *.json}
+        or return ();
+
+    my @list;
+
+    foreach my $file(@files) {
+        if ($file =~ m/($uuid)/) {
+            push @list, $1;
+        }
+    }
+
+    return @list;
 }
 
 sub login {
@@ -51,17 +63,21 @@ sub create_config {
 }
 
 sub enable_tunnel_feature {
-    system qw(cli dock --enable cloudflare-tunnel);
+    system qw(mvu docker --enable cloudflare-tunnel);
 }
 
 sub call_tunnel {
     system @docker_args, tunnel => @_;
 }
 
-sub register {
-    my $list_result = list_tunnels;
+sub route_tunnel {
+    print "Domain Name? ";
+    my $domain = get_input;
+    system @docker_args, qw(tunnel route dns Web), $domain;
+}
 
-    my @list = grep { $_ } map { /($uuid)/; $1 } split /\n/, $list_result;
+sub register {
+    my @list = list_tunnels;
 
     my $select;
 
@@ -75,7 +91,7 @@ sub register {
     }
     elsif ( @list > 1 ) {
         print "There is more than one tunnels. Which one?\n";
-        print "$list_result\n\n>> ";
+        printf "%s\n\n>> ", join "\n", @list;
         $select = get_input;
         die "Invalid selection.\n"
           if !$select
@@ -85,11 +101,15 @@ sub register {
 
     my $config = $config_template;
 
-    $config =~ s/\<UUID\>/$select/;
+    $config =~ s/\<UUID\>/$select/g;
 
     create_config $config;
 
     enable_tunnel_feature;
+
+    route_tunnel;
+
+    print "Done! Now you can run [mvu docker up -d tunnel]\n";
 }
 
 sub main {
